@@ -1,6 +1,7 @@
 import requests
 import json
-from typing import List, Dict, Optional
+import base64
+from typing import List, Dict, Optional, Union, Any
 
 from zeptomail.errors import ZeptoMailError
 
@@ -28,22 +29,6 @@ class ZeptoMail:
             "Authorization": api_key
         }
 
-    def _build_email_address(self, address: str, name: Optional[str] = None) -> Dict:
-        """
-        Build an email address object.
-
-        Args:
-            address: Email address
-            name: Name associated with the email address
-
-        Returns:
-            Dict containing email address details
-        """
-        email_obj = {"address": address}
-        if name:
-            email_obj["name"] = name
-        return email_obj
-
     def _build_recipient(self, address: str, name: Optional[str] = None) -> Dict:
         """
         Build a recipient object.
@@ -55,7 +40,9 @@ class ZeptoMail:
         Returns:
             Dict containing recipient details
         """
-        recipient = {"email_address": self._build_email_address(address, name)}
+        recipient = {"email": address}
+        if name:
+            recipient["name"] = name
         return recipient
 
     def _build_recipient_with_merge_info(self, address: str, name: Optional[str] = None,
@@ -122,6 +109,27 @@ class ZeptoMail:
         
         return response_data
     
+    def _ensure_json_serializable(self, obj: Any) -> Any:
+        """
+        Recursively process an object to ensure it's JSON serializable.
+        Converts bytes to base64-encoded strings.
+        
+        Args:
+            obj: The object to process
+            
+        Returns:
+            A JSON serializable version of the object
+        """
+        if isinstance(obj, dict):
+            return {k: self._ensure_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._ensure_json_serializable(item) for item in obj]
+        elif isinstance(obj, bytes):
+            # Convert bytes to base64 encoded string
+            return base64.b64encode(obj).decode('utf-8')
+        else:
+            return obj
+            
     def _get_error_solution(self, code: str, sub_code: str, details: List[Dict]) -> Optional[str]:
         """
         Get a solution message based on error codes.
@@ -240,7 +248,7 @@ class ZeptoMail:
         url = f"{self.base_url}/email"
 
         payload = {
-            "from": self._build_email_address(from_address, from_name),
+            "from": self._build_recipient(from_address, from_name),
             "subject": subject
         }
 
@@ -281,7 +289,9 @@ class ZeptoMail:
         if inline_images:
             payload["inline_images"] = inline_images
 
-        response = requests.post(url, headers=self.headers, data=json.dumps(payload))
+        # Ensure payload is JSON serializable by encoding any bytes objects to base64 strings
+        serializable_payload = self._ensure_json_serializable(payload)
+        response = requests.post(url, headers=self.headers, data=json.dumps(serializable_payload))
         return self._handle_response(response)
 
     def send_batch_email(self,
@@ -326,7 +336,7 @@ class ZeptoMail:
         url = f"{self.base_url}/email/batch"
 
         payload = {
-            "from": self._build_email_address(from_address, from_name),
+            "from": self._build_recipient(from_address, from_name),
             "subject": subject
         }
 
@@ -367,7 +377,9 @@ class ZeptoMail:
         if merge_info:
             payload["merge_info"] = merge_info
 
-        response = requests.post(url, headers=self.headers, data=json.dumps(payload))
+        # Ensure payload is JSON serializable by encoding any bytes objects to base64 strings
+        serializable_payload = self._ensure_json_serializable(payload)
+        response = requests.post(url, headers=self.headers, data=json.dumps(serializable_payload))
         return self._handle_response(response)
 
     # Helper methods for common operations

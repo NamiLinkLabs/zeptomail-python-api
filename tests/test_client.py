@@ -7,21 +7,14 @@ class TestZeptoMail(unittest.TestCase):
     def setUp(self):
         self.client = ZeptoMail("test-api-key")
     
-    def test_build_email_address(self):
+    def test_build_recipient(self):
         # Test with name
-        result = self.client._build_email_address("test@example.com", "Test User")
-        self.assertEqual(result, {"address": "test@example.com", "name": "Test User"})
+        result = self.client._build_recipient("test@example.com", "Test User")
+        self.assertEqual(result, {"email": "test@example.com", "name": "Test User"})
         
         # Test without name
-        result = self.client._build_email_address("test@example.com")
-        self.assertEqual(result, {"address": "test@example.com"})
-    
-    def test_build_recipient(self):
-        result = self.client._build_recipient("test@example.com", "Test User")
-        self.assertEqual(
-            result, 
-            {"email_address": {"address": "test@example.com", "name": "Test User"}}
-        )
+        result = self.client._build_recipient("test@example.com")
+        self.assertEqual(result, {"email": "test@example.com"})
     
     @patch('requests.post')
     def test_send_email(self, mock_post):
@@ -239,7 +232,7 @@ class TestZeptoMail(unittest.TestCase):
         to_recipients = [self.client.add_recipient("to@example.com", "To Recipient")]
         cc_recipients = [self.client.add_recipient("cc@example.com", "CC Recipient")]
         bcc_recipients = [self.client.add_recipient("bcc@example.com", "BCC Recipient")]
-        reply_to = [{"address": "reply@example.com", "name": "Reply To"}]
+        reply_to = [{"email": "reply@example.com", "name": "Reply To"}]
         
         attachments = [
             self.client.add_attachment_from_content(
@@ -286,7 +279,7 @@ class TestZeptoMail(unittest.TestCase):
         self.assertEqual(args[0], "https://api.zeptomail.eu/v1.1/email")
         
         payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["address"], "sender@example.com")
+        self.assertEqual(payload["from"]["email"], "sender@example.com")
         self.assertEqual(payload["from"]["name"], "Full Sender")
         self.assertEqual(payload["to"], to_recipients)
         self.assertEqual(payload["cc"], cc_recipients)
@@ -347,7 +340,7 @@ class TestZeptoMail(unittest.TestCase):
         
         # Verify payload structure
         payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["address"], "test@example.com")
+        self.assertEqual(payload["from"]["email"], "test@example.com")
         self.assertEqual(payload["from"]["name"], "Sender")
         self.assertEqual(len(payload["to"]), 2)
         self.assertEqual(payload["subject"], "Test Batch Email")
@@ -467,7 +460,7 @@ class TestZeptoMail(unittest.TestCase):
         self.assertEqual(args[0], "https://api.zeptomail.eu/v1.1/email/batch")
         
         payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["address"], "sender@example.com")
+        self.assertEqual(payload["from"]["email"], "sender@example.com")
         self.assertEqual(payload["from"]["name"], "Full Sender")
         self.assertEqual(payload["to"], to_recipients)
         self.assertEqual(payload["cc"], cc_recipients)
@@ -491,10 +484,8 @@ class TestZeptoMail(unittest.TestCase):
             {"first_name": "Recipient", "last_name": "Name", "order_id": "12345"}
         )
         self.assertEqual(result, {
-            "email_address": {
-                "address": "recipient@example.com",
-                "name": "Recipient Name"
-            },
+            "email": "recipient@example.com",
+            "name": "Recipient Name",
             "merge_info": {
                 "first_name": "Recipient", 
                 "last_name": "Name", 
@@ -505,18 +496,14 @@ class TestZeptoMail(unittest.TestCase):
         # Test with only address
         result = self.client.add_batch_recipient("recipient@example.com")
         self.assertEqual(result, {
-            "email_address": {
-                "address": "recipient@example.com"
-            }
+            "email": "recipient@example.com"
         })
         
         # Test with address and name but no merge_info
         result = self.client.add_batch_recipient("recipient@example.com", "Recipient Name")
         self.assertEqual(result, {
-            "email_address": {
-                "address": "recipient@example.com",
-                "name": "Recipient Name"
-            }
+            "email": "recipient@example.com",
+            "name": "Recipient Name"
         })
         
 if __name__ == '__main__':

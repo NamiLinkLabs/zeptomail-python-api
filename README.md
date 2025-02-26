@@ -31,6 +31,7 @@ client = ZeptoMail("your-api-key-here")
 
 # Create a recipient
 recipient = client.add_recipient("recipient@example.com", "Recipient Name")
+# This creates: {"email": "recipient@example.com", "name": "Recipient Name"}
 
 # Send a simple email
 response = client.send_email(
