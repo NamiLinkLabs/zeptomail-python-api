@@ -5,8 +5,6 @@ Script to build documentation for the ZeptoMail Python API.
 import os
 import subprocess
 import sys
-import webbrowser
-from pathlib import Path
 
 def build_docs(serve=False, port=None):
     """Build the documentation.
@@ -25,14 +23,7 @@ def build_docs(serve=False, port=None):
         else:
             print("Building documentation...")
             subprocess.run(["mkdocs", "build"], check=True)
-            
-            # Open the documentation in a browser
-            site_dir = Path("site/index.html")
-            if site_dir.exists():
-                print(f"Documentation built successfully. Opening {site_dir}...")
-                webbrowser.open(site_dir.as_uri())
-            else:
-                print("Documentation built, but site directory not found.")
+
     except subprocess.CalledProcessError as e:
         print(f"Error building documentation: {e}")
         return False

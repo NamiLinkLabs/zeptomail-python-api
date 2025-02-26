@@ -1,7 +1,7 @@
 import requests
 import json
 import base64
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Any
 
 from zeptomail.errors import ZeptoMailError
 
@@ -29,36 +29,77 @@ class ZeptoMail:
             "Authorization": api_key
         }
 
-    def _build_recipient(self, address: str, name: Optional[str] = None) -> Dict:
+    def _build_recipient(self, email: str, name: Optional[str] = None) -> Dict:
         """
         Build a recipient object.
 
         Args:
-            address: Email address of the recipient
+            email: Email address of the recipient
             name: Name of the recipient
 
         Returns:
             Dict containing recipient details
+            
+        Raises:
+            ZeptoMailError: If the email address is invalid
         """
-        recipient = {"email": address}
-        if name:
-            recipient["name"] = name
-        return recipient
 
-    def _build_recipient_with_merge_info(self, address: str, name: Optional[str] = None,
+            
+        email_address = {"address": email}
+        if name:
+            email_address["name"] = name
+            
+        return email_address
+    
+    def build_sender(self, email: str, name: Optional[str] = None) -> Dict:
+        """
+        Build a sender object.
+
+        Args:
+            email: Email address of the sender
+            name: Name of the sender
+
+        Returns:
+            Dict containing sender details with format {"address": email, "name": name}
+            
+        Raises:
+            ZeptoMailError: If the email address is invalid
+        """
+        if not email:
+            raise ZeptoMailError(
+                "Email address cannot be empty",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not self._validate_email(email):
+            raise ZeptoMailError(
+                f"Invalid email address format: {email}",
+                code="VALIDATION_ERROR"
+            )
+            
+        sender = {"address": email}
+        if name:
+            sender["name"] = name
+            
+        return sender
+
+    def _build_recipient_with_merge_info(self, email: str, name: Optional[str] = None,
                                          merge_info: Optional[Dict] = None) -> Dict:
         """
         Build a recipient object with merge info.
 
         Args:
-            address: Email address of the recipient
+            email: Email address of the recipient
             name: Name of the recipient
             merge_info: Dictionary containing merge fields for this recipient
 
         Returns:
             Dict containing recipient details with merge info
+            
+        Raises:
+            ZeptoMailError: If the email address is invalid
         """
-        recipient = self._build_recipient(address, name)
+        recipient = {"email_address": self._build_recipient(email, name)}
         if merge_info:
             recipient["merge_info"] = merge_info
         return recipient
@@ -95,7 +136,7 @@ class ZeptoMail:
             request_id = response_data.get("request_id")
             
             # Get solution based on error codes
-            solution = self._get_error_solution(error_code, error_sub_code, error_details)
+            solution = ZeptoMailError.get_error_solution(error_code, error_sub_code, error_details)
             if solution:
                 error_message = f"{error_message}. {solution}"
             
@@ -105,6 +146,10 @@ class ZeptoMail:
                 sub_code=error_sub_code,
                 details=error_details,
                 request_id=request_id
+            )
+        if response.status_code != 201:
+            raise Exception(
+                f"Invalid response from API: {response}",
             )
         
         return response_data
@@ -130,84 +175,24 @@ class ZeptoMail:
         else:
             return obj
             
-    def _get_error_solution(self, code: str, sub_code: str, details: List[Dict]) -> Optional[str]:
+    def _validate_email(self, email: str) -> bool:
         """
-        Get a solution message based on error codes.
+        Validate an email address format.
         
         Args:
-            code: The error code
-            sub_code: The error sub-code
-            details: Error details
+            email: Email address to validate
             
         Returns:
-            A solution message or None
+            True if the email format is valid, False otherwise
         """
-        # Map of error codes to solutions
-        error_solutions = {
-            "TM_3201": {
-                "GE_102": {
-                    "subject": "Set a non-empty subject for your email.",
-                    "from": "Add the mandatory 'from' field with a valid email address.",
-                    "to": "Add at least one recipient using 'to', 'cc', or 'bcc' fields.",
-                    "Mail Template Key": "Add the mandatory 'Mail Template Key' field."
-                }
-            },
-            "TM_3301": {
-                "SM_101": "Check your API request syntax for valid JSON format.",
-                "SM_120": "Ensure the attachment MIME type matches the actual file content."
-            },
-            "TM_3501": {
-                "UE_106": "Use a valid File Cache Key from your Mail Agent's File Cache tab.",
-                "MTR_101": "Use a valid Template Key from your Mail Agent.",
-                "LE_101": "Your credits have expired. Purchase new credits from the ZeptoMail Subscription page."
-            },
-            "TM_3601": {
-                "SERR_156": "Add your sending IP to the allowed IPs list in settings.",
-                "SM_133": "Your trial sending limit is exceeded. Get your account reviewed to continue.",
-                "SMI_115": "Daily sending limit reached. Try again tomorrow.",
-                "AE_101": "Your account is blocked. Contact ZeptoMail support."
-            },
-            "TM_4001": {
-                "SM_111": "Use a sender address with a domain that is verified in your Mail Agent.",
-                "SM_113": "Provide valid values for all required fields.",
-                "SM_128": "Your account needs to be reviewed. Get your account approved before sending emails.",
-                "SERR_157": "Use a valid Sendmail token from your Mail Agent configuration settings."
-            },
-            "TM_5001": {
-                "LE_102": "Your credits are exhausted. Purchase new credits from the ZeptoMail Subscription page."
-            },
-            "TM_8001": {
-                "SM_127": "Reduce the number of attachments to 60 or fewer.",
-                "SM_129": "Ensure all name fields are under 250 characters, subject is under 500 characters, attachment size is under 15MB, and attachment filenames are under 150 characters."
-            }
-        }
-        
-        # Check if we have a solution for this error code
-        if code in error_solutions:
-            code_solutions = error_solutions[code]
+        import re
+        # Basic email validation pattern
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return bool(re.match(pattern, email))
             
-            # If we have a sub-code specific solution
-            if sub_code in code_solutions:
-                sub_code_solution = code_solutions[sub_code]
-                
-                # If the sub-code solution is a string, return it directly
-                if isinstance(sub_code_solution, str):
-                    return sub_code_solution
-                
-                # If it's a dict, try to find a more specific solution based on details
-                elif isinstance(sub_code_solution, dict) and details:
-                    for detail in details:
-                        target = detail.get("target", "")
-                        if target in sub_code_solution:
-                            return sub_code_solution[target]
-                    
-                    # If no specific target match, return the first solution
-                    return next(iter(sub_code_solution.values()), None)
-        
-        return None
     
     def send_email(self,
-                   from_address: str,
+                   from_email: str,
                    from_name: Optional[str] = None,
                    to: List[Dict] = None,
                    cc: List[Dict] = None,
@@ -226,7 +211,7 @@ class ZeptoMail:
         Send a single email using the ZeptoMail API.
 
         Args:
-            from_address: Sender's email address
+            from_email: Sender's Email address
             from_name: Sender's name
             to: List of recipient dictionaries
             cc: List of cc recipient dictionaries
@@ -244,11 +229,33 @@ class ZeptoMail:
 
         Returns:
             API response as a dictionary
+            
+        Raises:
+            ZeptoMailError: If required fields are missing or API returns an error
         """
+        # Validate required fields
+        if not from_email:
+            raise ZeptoMailError(
+                "Missing required field: 'from_email' cannot be empty",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not (to or cc or bcc):
+            raise ZeptoMailError(
+                "Missing required field: at least one recipient (to, cc, or bcc) is required",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not (html_body or text_body):
+            raise ZeptoMailError(
+                "Missing required field: either 'html_body' or 'text_body' must be provided",
+                code="VALIDATION_ERROR"
+            )
+            
         url = f"{self.base_url}/email"
 
         payload = {
-            "from": self._build_recipient(from_address, from_name),
+            "from": self.build_sender(from_email, from_name),
             "subject": subject
         }
 
@@ -295,7 +302,7 @@ class ZeptoMail:
         return self._handle_response(response)
 
     def send_batch_email(self,
-                         from_address: str,
+                         from_email: str,
                          from_name: Optional[str] = None,
                          to: List[Dict] = None,
                          cc: List[Dict] = None,
@@ -314,7 +321,7 @@ class ZeptoMail:
         Send a batch email using the ZeptoMail API.
 
         Args:
-            from_address: Sender's email address
+            from_email: Sender's Email address
             from_name: Sender's name
             to: List of recipient dictionaries with optional merge_info
             cc: List of cc recipient dictionaries
@@ -332,11 +339,33 @@ class ZeptoMail:
 
         Returns:
             API response as a dictionary
+            
+        Raises:
+            ZeptoMailError: If required fields are missing or API returns an error
         """
+        # Validate required fields
+        if not from_email:
+            raise ZeptoMailError(
+                "Missing required field: 'from_email' cannot be empty",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not (to or cc or bcc):
+            raise ZeptoMailError(
+                "Missing required field: at least one recipient (to, cc, or bcc) is required",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not (html_body or text_body):
+            raise ZeptoMailError(
+                "Missing required field: either 'html_body' or 'text_body' must be provided",
+                code="VALIDATION_ERROR"
+            )
+            
         url = f"{self.base_url}/email/batch"
 
         payload = {
-            "from": self._build_recipient(from_address, from_name),
+            "from": self.build_sender(from_email, from_name),
             "subject": subject
         }
 
@@ -384,33 +413,36 @@ class ZeptoMail:
 
     # Helper methods for common operations
 
-    def add_recipient(self, address: str, name: Optional[str] = None) -> Dict:
+    def add_recipient(self, email: str, name: Optional[str] = None) -> Dict:
         """
         Create a recipient object for use in to, cc, bcc lists.
 
         Args:
-            address: Email address
+            email: Email address
             name: Recipient name
 
         Returns:
-            Recipient dictionary
+            Recipient dictionary with format {"email_address": {"address": email, "name": name}}
         """
-        return self._build_recipient(address, name)
+        return {"email_address": self._build_recipient(email, name)}
 
-    def add_batch_recipient(self, address: str, name: Optional[str] = None,
+    def add_batch_recipient(self, email: str, name: Optional[str] = None,
                             merge_info: Optional[Dict] = None) -> Dict:
         """
         Create a batch recipient object with merge info.
 
         Args:
-            address: Email address
+            email: Email address
             name: Recipient name
             merge_info: Merge fields for this recipient
 
         Returns:
-            Recipient dictionary with merge info
+            Recipient dictionary with format {"email_address": {"address": email, "name": name}, "merge_info": {...}}
         """
-        return self._build_recipient_with_merge_info(address, name, merge_info)
+        recipient = {"email_address": self._build_recipient(email, name)}
+        if merge_info:
+            recipient["merge_info"] = merge_info
+        return recipient
 
     def add_attachment_from_file_cache(self, file_cache_key: str, name: Optional[str] = None) -> Dict:
         """

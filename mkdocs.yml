@@ -32,16 +32,6 @@ plugins:
             show_category_heading: true
             show_if_no_docstring: false
             heading_level: 2
-  - llmstxt:
-      preprocess: docs/preprocess_llms.py
-      files:
-        - output: llms.txt
-          inputs:
-            - index.md
-            - getting-started.md
-            - api/client.md
-            - api/errors.md
-            - examples/*.md
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -63,12 +53,11 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - API Reference:
-    - Client: api/client.md
-    - Errors: api/errors.md
+  - API Reference: api/client.md
   - Examples:
     - Basic Usage: examples/basic-usage.md
     - Batch Emails: examples/batch-emails.md
     - Attachments: examples/attachments.md
     - Advanced Usage: examples/advanced-usage.md
+  - Errors: api/errors.md
   - Contributing: contributing.md
