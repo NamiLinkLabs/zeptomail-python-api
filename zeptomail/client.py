@@ -1,6 +1,44 @@
 import requests
 import json
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Optional, Union, Any
+
+
+class ZeptoMailError(Exception):
+    """Exception raised for ZeptoMail API errors."""
+    
+    def __init__(self, message: str, code: str = None, sub_code: str = None, 
+                 details: List[Dict] = None, request_id: str = None):
+        self.message = message
+        self.code = code
+        self.sub_code = sub_code
+        self.details = details or []
+        self.request_id = request_id
+        
+        # Build a detailed error message
+        error_msg = f"ZeptoMail API Error: {message}"
+        if code:
+            error_msg += f" (Code: {code}"
+            if sub_code:
+                error_msg += f", Sub-Code: {sub_code}"
+            error_msg += ")"
+        
+        if details:
+            detail_messages = []
+            for detail in details:
+                target = detail.get("target", "")
+                detail_msg = detail.get("message", "")
+                if target and detail_msg:
+                    detail_messages.append(f"{target}: {detail_msg}")
+                elif detail_msg:
+                    detail_messages.append(detail_msg)
+            
+            if detail_messages:
+                error_msg += f"\nDetails: {', '.join(detail_messages)}"
+        
+        if request_id:
+            error_msg += f"\nRequest ID: {request_id}"
+            
+        super().__init__(error_msg)
 
 
 class ZeptoMail:
@@ -16,10 +54,12 @@ class ZeptoMail:
         """
         self.api_key = api_key
         self.base_url = base_url
+        if not api_key.startswith("Zoho-enczapikey "):
+            api_key = f"Zoho-enczapikey {api_key}"
         self.headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "Authorization": f"Zoho-enczapikey {api_key}"
+            "Authorization": api_key
         }
 
     def _build_email_address(self, address: str, name: Optional[str] = None) -> Dict:
@@ -70,6 +110,128 @@ class ZeptoMail:
             recipient["merge_info"] = merge_info
         return recipient
 
+    def _handle_response(self, response: requests.Response) -> Dict:
+        """
+        Handle the API response and check for errors.
+        
+        Args:
+            response: Response object from requests
+            
+        Returns:
+            Parsed response as a dictionary
+            
+        Raises:
+            ZeptoMailError: If the API returns an error
+        """
+        try:
+            response_data = response.json()
+        except ValueError:
+            raise ZeptoMailError(
+                f"Invalid JSON response from API (Status code: {response.status_code})",
+                code="TM_3301",
+                sub_code="SM_101"
+            )
+        
+        # Check if the response contains an error
+        if "error" in response_data:
+            error = response_data["error"]
+            error_message = error.get("message", "Unknown error")
+            error_code = error.get("code", "unknown")
+            error_sub_code = error.get("sub_code", None)
+            error_details = error.get("details", [])
+            request_id = response_data.get("request_id")
+            
+            # Get solution based on error codes
+            solution = self._get_error_solution(error_code, error_sub_code, error_details)
+            if solution:
+                error_message = f"{error_message}. {solution}"
+            
+            raise ZeptoMailError(
+                message=error_message,
+                code=error_code,
+                sub_code=error_sub_code,
+                details=error_details,
+                request_id=request_id
+            )
+        
+        return response_data
+    
+    def _get_error_solution(self, code: str, sub_code: str, details: List[Dict]) -> Optional[str]:
+        """
+        Get a solution message based on error codes.
+        
+        Args:
+            code: The error code
+            sub_code: The error sub-code
+            details: Error details
+            
+        Returns:
+            A solution message or None
+        """
+        # Map of error codes to solutions
+        error_solutions = {
+            "TM_3201": {
+                "GE_102": {
+                    "subject": "Set a non-empty subject for your email.",
+                    "from": "Add the mandatory 'from' field with a valid email address.",
+                    "to": "Add at least one recipient using 'to', 'cc', or 'bcc' fields.",
+                    "Mail Template Key": "Add the mandatory 'Mail Template Key' field."
+                }
+            },
+            "TM_3301": {
+                "SM_101": "Check your API request syntax for valid JSON format.",
+                "SM_120": "Ensure the attachment MIME type matches the actual file content."
+            },
+            "TM_3501": {
+                "UE_106": "Use a valid File Cache Key from your Mail Agent's File Cache tab.",
+                "MTR_101": "Use a valid Template Key from your Mail Agent.",
+                "LE_101": "Your credits have expired. Purchase new credits from the ZeptoMail Subscription page."
+            },
+            "TM_3601": {
+                "SERR_156": "Add your sending IP to the allowed IPs list in settings.",
+                "SM_133": "Your trial sending limit is exceeded. Get your account reviewed to continue.",
+                "SMI_115": "Daily sending limit reached. Try again tomorrow.",
+                "AE_101": "Your account is blocked. Contact ZeptoMail support."
+            },
+            "TM_4001": {
+                "SM_111": "Use a sender address with a domain that is verified in your Mail Agent.",
+                "SM_113": "Provide valid values for all required fields.",
+                "SM_128": "Your account needs to be reviewed. Get your account approved before sending emails.",
+                "SERR_157": "Use a valid Sendmail token from your Mail Agent configuration settings."
+            },
+            "TM_5001": {
+                "LE_102": "Your credits are exhausted. Purchase new credits from the ZeptoMail Subscription page."
+            },
+            "TM_8001": {
+                "SM_127": "Reduce the number of attachments to 60 or fewer.",
+                "SM_129": "Ensure all name fields are under 250 characters, subject is under 500 characters, attachment size is under 15MB, and attachment filenames are under 150 characters."
+            }
+        }
+        
+        # Check if we have a solution for this error code
+        if code in error_solutions:
+            code_solutions = error_solutions[code]
+            
+            # If we have a sub-code specific solution
+            if sub_code in code_solutions:
+                sub_code_solution = code_solutions[sub_code]
+                
+                # If the sub-code solution is a string, return it directly
+                if isinstance(sub_code_solution, str):
+                    return sub_code_solution
+                
+                # If it's a dict, try to find a more specific solution based on details
+                elif isinstance(sub_code_solution, dict) and details:
+                    for detail in details:
+                        target = detail.get("target", "")
+                        if target in sub_code_solution:
+                            return sub_code_solution[target]
+                    
+                    # If no specific target match, return the first solution
+                    return next(iter(sub_code_solution.values()), None)
+        
+        return None
+    
     def send_email(self,
                    from_address: str,
                    from_name: Optional[str] = None,
@@ -154,7 +316,7 @@ class ZeptoMail:
             payload["inline_images"] = inline_images
 
         response = requests.post(url, headers=self.headers, data=json.dumps(payload))
-        return response.json()
+        return self._handle_response(response)
 
     def send_batch_email(self,
                          from_address: str,
@@ -240,7 +402,7 @@ class ZeptoMail:
             payload["merge_info"] = merge_info
 
         response = requests.post(url, headers=self.headers, data=json.dumps(payload))
-        return response.json()
+        return self._handle_response(response)
 
     # Helper methods for common operations
 
