@@ -30,24 +30,24 @@ class TestZeptoMail(unittest.TestCase):
         """Test building email dictionaries"""
         # Test with email only
         email_dict = self.client.build_email_dict("test@example.com")
-        self.assertEqual(email_dict, {"email": "test@example.com"})
+        self.assertEqual(email_dict, {"address": "test@example.com"})
         
         # Test with email and name
         email_dict = self.client.build_email_dict("test@example.com", "Test User")
-        self.assertEqual(email_dict, {"email": "test@example.com", "name": "Test User"})
+        self.assertEqual(email_dict, {"address": "test@example.com", "name": "Test User"})
     
     def test_build_recipient_with_merge_info(self):
         """Test building recipient with merge info"""
         # Test with email only
         recipient = self.client._build_recipient_with_merge_info("test@example.com")
         self.assertEqual(recipient, {
-            "email_address": {"email": "test@example.com"}
+            "email_address": {"address": "test@example.com"}
         })
         
         # Test with email and name
         recipient = self.client._build_recipient_with_merge_info("test@example.com", "Test User")
         self.assertEqual(recipient, {
-            "email_address": {"email": "test@example.com", "name": "Test User"}
+            "email_address": {"address": "test@example.com", "name": "Test User"}
         })
         
         # Test with merge info
@@ -56,7 +56,7 @@ class TestZeptoMail(unittest.TestCase):
             "test@example.com", "Test User", merge_info
         )
         self.assertEqual(recipient, {
-            "email_address": {"email": "test@example.com", "name": "Test User"},
+            "email_address": {"address": "test@example.com", "name": "Test User"},
             "merge_info": {"first_name": "Test", "last_name": "User"}
         })
     
@@ -164,7 +164,7 @@ class TestZeptoMail(unittest.TestCase):
         result = self.client.send_email(
             from_address="from@example.com",
             from_name="Sender",
-            to=[{"email": "to@example.com", "name": "Recipient"}],
+            to=[{"address": "to@example.com", "name": "Recipient"}],
             subject="Test Subject",
             html_body="<p>Test Body</p>"
         )
@@ -180,8 +180,8 @@ class TestZeptoMail(unittest.TestCase):
         
         self.assertEqual(url, "https://api.zeptomail.eu/v1.1/email")
         self.assertEqual(headers["Authorization"], "Zoho-enczapikey test_api_key")
-        self.assertEqual(payload["from"], {"email": "from@example.com", "name": "Sender"})
-        self.assertEqual(payload["to"], [{"email": "to@example.com", "name": "Recipient"}])
+        self.assertEqual(payload["from"], {"address": "from@example.com", "name": "Sender"})
+        self.assertEqual(payload["to"], [{"address": "to@example.com", "name": "Recipient"}])
         self.assertEqual(payload["subject"], "Test Subject")
         self.assertEqual(payload["htmlbody"], "<p>Test Body</p>")
     
@@ -194,9 +194,9 @@ class TestZeptoMail(unittest.TestCase):
         mock_post.return_value = mock_response
         
         # Create test data for all optional parameters
-        cc_recipients = [{"email": "cc@example.com", "name": "CC Recipient"}]
-        bcc_recipients = [{"email": "bcc@example.com", "name": "BCC Recipient"}]
-        reply_to = [{"email": "reply@example.com", "name": "Reply Contact"}]
+        cc_recipients = [{"address": "cc@example.com", "name": "CC Recipient"}]
+        bcc_recipients = [{"address": "bcc@example.com", "name": "BCC Recipient"}]
+        reply_to = [{"address": "reply@example.com", "name": "Reply Contact"}]
         attachments = [{"file_cache_key": "test_key", "name": "test.pdf"}]
         inline_images = [{"cid": "image1", "file_cache_key": "image_key"}]
         client_reference = "test-reference-123"
@@ -205,7 +205,7 @@ class TestZeptoMail(unittest.TestCase):
         result = self.client.send_email(
             from_address="from@example.com",
             from_name="Sender",
-            to=[{"email": "to@example.com", "name": "Recipient"}],
+            to=[{"address": "to@example.com", "name": "Recipient"}],
             cc=cc_recipients,
             bcc=bcc_recipients,
             reply_to=reply_to,
@@ -245,7 +245,7 @@ class TestZeptoMail(unittest.TestCase):
         with self.assertRaises(ZeptoMailError) as context:
             self.client._validate_email_params(
                 from_address="",
-                to=[{"email": "to@example.com"}],
+                to=[{"address": "to@example.com"}],
                 cc=None,
                 bcc=None,
                 html_body="<p>Test</p>",
@@ -271,7 +271,7 @@ class TestZeptoMail(unittest.TestCase):
         with self.assertRaises(ZeptoMailError) as context:
             self.client._validate_email_params(
                 from_address="from@example.com",
-                to=[{"email": "to@example.com"}],
+                to=[{"address": "to@example.com"}],
                 cc=None,
                 bcc=None,
                 html_body=None,
@@ -287,7 +287,7 @@ class TestZeptoMail(unittest.TestCase):
         with self.assertRaises(ZeptoMailError) as context:
             self.client.send_email(
                 from_address="",
-                to=[{"email": "to@example.com"}],
+                to=[{"address": "to@example.com"}],
                 html_body="<p>Test</p>"
             )
         self.assertEqual(context.exception.code, "VALIDATION_ERROR")
@@ -307,7 +307,7 @@ class TestZeptoMail(unittest.TestCase):
         with self.assertRaises(ZeptoMailError) as context:
             self.client.send_email(
                 from_address="from@example.com",
-                to=[{"email": "to@example.com"}],
+                to=[{"address": "to@example.com"}],
                 html_body=None,
                 text_body=None
             )
@@ -326,8 +326,8 @@ class TestZeptoMail(unittest.TestCase):
             from_address="from@example.com",
             from_name="Sender",
             to=[
-                {"email": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
-                {"email": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
+                {"address": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
+                {"address": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
             ],
             subject="Test Subject",
             html_body="<p>Hello {{name}}</p>",
@@ -343,10 +343,10 @@ class TestZeptoMail(unittest.TestCase):
         payload = json.loads(call_args[1]["data"])
         
         self.assertEqual(url, "https://api.zeptomail.eu/v1.1/email/batch")
-        self.assertEqual(payload["from"], {"email": "from@example.com", "name": "Sender"})
+        self.assertEqual(payload["from"], {"address": "from@example.com", "name": "Sender"})
         self.assertEqual(payload["to"], [
-            {"email": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
-            {"email": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
+            {"address": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
+            {"address": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
         ])
         self.assertEqual(payload["merge_info"], {"default": "Friend"})
         
@@ -359,8 +359,8 @@ class TestZeptoMail(unittest.TestCase):
         mock_post.return_value = mock_response
         
         # Create test data for all optional parameters
-        cc_recipients = [{"email": "cc@example.com", "name": "CC Recipient"}]
-        bcc_recipients = [{"email": "bcc@example.com", "name": "BCC Recipient"}]
+        cc_recipients = [{"address": "cc@example.com", "name": "CC Recipient"}]
+        bcc_recipients = [{"address": "bcc@example.com", "name": "BCC Recipient"}]
         attachments = [{"file_cache_key": "test_key", "name": "test.pdf"}]
         inline_images = [{"cid": "image1", "file_cache_key": "image_key"}]
         client_reference = "test-reference-123"
@@ -369,7 +369,7 @@ class TestZeptoMail(unittest.TestCase):
         result = self.client.send_batch_email(
             from_address="from@example.com",
             from_name="Sender",
-            to=[{"email": "to@example.com", "name": "Recipient"}],
+            to=[{"address": "to@example.com", "name": "Recipient"}],
             cc=cc_recipients,
             bcc=bcc_recipients,
             subject="Test Subject",
@@ -407,17 +407,13 @@ class TestZeptoMail(unittest.TestCase):
         """Test helper methods for creating recipients and attachments"""
         # Test add_recipient
         recipient = self.client.add_recipient("test@example.com", "Test User")
-        self.assertEqual(recipient, {"email": "test@example.com", "name": "Test User"})
+        self.assertEqual(recipient, {'email_address': {'address': 'test@example.com', 'name': 'Test User'}})
         
         # Test add_batch_recipient
         batch_recipient = self.client.add_batch_recipient(
             "test@example.com", "Test User", {"var1": "value1"}
         )
-        self.assertEqual(batch_recipient, {
-            "email": "test@example.com", 
-            "name": "Test User",
-            "merge_info": {"var1": "value1"}
-        })
+        self.assertEqual(batch_recipient, {'email_address': {'address': 'test@example.com', 'merge_info': {'var1': 'value1'}, 'name': 'Test User'}})
         
         # Test add_attachment_from_file_cache
         attachment = self.client.add_attachment_from_file_cache("cache_key", "file.pdf")

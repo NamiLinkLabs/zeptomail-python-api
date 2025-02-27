@@ -393,14 +393,14 @@ class ZeptoMail:
             merge_info: Merge fields for this recipient
 
         Returns:
-            Recipient dictionary with format {"email": email, "name": name, "merge_info": {...}}
+            Recipient dictionary with format {"email_address": {"email": email, "name": name, "merge_info": {...}}}
         """
-        recipient = {"email": email}
+        recipient = {"address": email}
         if name:
             recipient["name"] = name
         if merge_info:
             recipient["merge_info"] = merge_info
-        return recipient
+        return {"email_address":recipient}
 
     def add_attachment_from_file_cache(self, file_cache_key: str, name: Optional[str] = None) -> Dict:
         """
