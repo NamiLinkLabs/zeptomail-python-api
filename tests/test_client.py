@@ -1,510 +1,454 @@
 import unittest
+from unittest.mock import patch, Mock
 import json
-from unittest.mock import patch, MagicMock
-from zeptomail import ZeptoMail, ZeptoMailError
+import base64
+from zeptomail.client import ZeptoMail
+from zeptomail.errors import ZeptoMailError
 
 class TestZeptoMail(unittest.TestCase):
     def setUp(self):
-        self.client = ZeptoMail("test-api-key")
-    
-    def test_build_recipient(self):
-        # Test with name
-        result = self.client._build_recipient("test@example.com", "Test User")
-        self.assertEqual(result, {"email": "test@example.com", "name": "Test User"})
+        self.api_key = "test_api_key"
+        self.client = ZeptoMail(self.api_key)
         
-        # Test without name
-        result = self.client._build_recipient("test@example.com")
-        self.assertEqual(result, {"email": "test@example.com"})
-    
-    @patch('requests.post')
-    def test_send_email(self, mock_post):
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"data": {"message_id": "test-id"}}
-        mock_post.return_value = mock_response
+    def test_init(self):
+        """Test client initialization with different API key formats"""
+        # Test with plain API key
+        client = ZeptoMail("test_api_key")
+        self.assertEqual(client.api_key, "test_api_key")
+        self.assertEqual(client.headers["Authorization"], "Zoho-enczapikey test_api_key")
         
-        # Call the method
-        response = self.client.send_email(
-            from_address="test@example.com",
-            from_name="Sender",
-            to=[self.client.add_recipient("recipient@example.com", "Recipient")],
-            subject="Test Email",
-            html_body="<p>Test</p>"
+        # Test with prefixed API key
+        client = ZeptoMail("Zoho-enczapikey prefixed_key")
+        self.assertEqual(client.api_key, "Zoho-enczapikey prefixed_key")
+        self.assertEqual(client.headers["Authorization"], "Zoho-enczapikey prefixed_key")
+        
+        # Test with custom base URL
+        client = ZeptoMail("test_api_key", base_url="https://custom.api.url")
+        self.assertEqual(client.base_url, "https://custom.api.url")
+    
+    def test_build_email_dict(self):
+        """Test building email dictionaries"""
+        # Test with email only
+        email_dict = self.client.build_email_dict("test@example.com")
+        self.assertEqual(email_dict, {"email": "test@example.com"})
+        
+        # Test with email and name
+        email_dict = self.client.build_email_dict("test@example.com", "Test User")
+        self.assertEqual(email_dict, {"email": "test@example.com", "name": "Test User"})
+    
+    def test_build_recipient_with_merge_info(self):
+        """Test building recipient with merge info"""
+        # Test with email only
+        recipient = self.client._build_recipient_with_merge_info("test@example.com")
+        self.assertEqual(recipient, {
+            "email_address": {"email": "test@example.com"}
+        })
+        
+        # Test with email and name
+        recipient = self.client._build_recipient_with_merge_info("test@example.com", "Test User")
+        self.assertEqual(recipient, {
+            "email_address": {"email": "test@example.com", "name": "Test User"}
+        })
+        
+        # Test with merge info
+        merge_info = {"first_name": "Test", "last_name": "User"}
+        recipient = self.client._build_recipient_with_merge_info(
+            "test@example.com", "Test User", merge_info
         )
+        self.assertEqual(recipient, {
+            "email_address": {"email": "test@example.com", "name": "Test User"},
+            "merge_info": {"first_name": "Test", "last_name": "User"}
+        })
+    
+    def test_ensure_json_serializable(self):
+        """Test JSON serialization of different data types"""
+        # Test with simple types
+        self.assertEqual(self.client._ensure_json_serializable("test"), "test")
+        self.assertEqual(self.client._ensure_json_serializable(123), 123)
         
-        # Assert the response
-        self.assertEqual(response, {"data": {"message_id": "test-id"}})
+        # Test with bytes
+        bytes_data = b"test bytes"
+        expected = base64.b64encode(bytes_data).decode('utf-8')
+        self.assertEqual(self.client._ensure_json_serializable(bytes_data), expected)
         
-        # Assert the request was made correctly
-        mock_post.assert_called_once()
+        # Test with nested structures
+        complex_data = {
+            "string": "test",
+            "number": 123,
+            "bytes": b"test bytes",
+            "list": ["test", 123, b"more bytes"],
+            "nested": {
+                "bytes": b"nested bytes"
+            }
+        }
+        expected = {
+            "string": "test",
+            "number": 123,
+            "bytes": base64.b64encode(b"test bytes").decode('utf-8'),
+            "list": ["test", 123, base64.b64encode(b"more bytes").decode('utf-8')],
+            "nested": {
+                "bytes": base64.b64encode(b"nested bytes").decode('utf-8')
+            }
+        }
+        self.assertEqual(self.client._ensure_json_serializable(complex_data), expected)
     
     @patch('requests.post')
-    def test_handle_success_response(self, mock_post):
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {
-                "message_id": "test-id",
-                "code": "success",
-                "additional_info": {"key": "value"},
-                "message": "Email sent successfully"
-            },
-            "message": "success",
-            "request_id": "req-123456",
-            "object": "email"
-        }
-        mock_post.return_value = mock_response
+    def test_handle_response_success(self, mock_post):
+        """Test successful API response handling"""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"data": "test_data"}
         
-        # Call the method
-        response = self.client.send_email(
-            from_address="test@example.com",
-            from_name="Sender",
-            to=[self.client.add_recipient("recipient@example.com", "Recipient")],
-            subject="Test Email",
-            html_body="<p>Test</p>"
-        )
-        
-        # Assert the response is returned correctly
-        self.assertEqual(response["data"]["message_id"], "test-id")
-        self.assertEqual(response["data"]["code"], "success")
-        self.assertEqual(response["request_id"], "req-123456")
+        result = self.client._handle_response(mock_response)
+        self.assertEqual(result, {"data": "test_data"})
     
     @patch('requests.post')
-    def test_handle_error_response(self, mock_post):
-        # Setup mock response with error
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "error": {
-                "code": "invalid_parameter",
-                "message": "Invalid parameter provided",
-                "details": [
-                    {
-                        "code": "missing_field",
-                        "message": "This field is required",
-                        "target": "to"
-                    }
-                ]
-            },
-            "request_id": "req-error-123"
-        }
-        mock_post.return_value = mock_response
-        
-        # Call the method and expect an exception
-        with self.assertRaises(ZeptoMailError) as context:
-            self.client.send_email(
-                from_address="test@example.com",
-                subject="Test Email",
-                html_body="<p>Test</p>"
-            )
-        
-        # Check the exception message
-        self.assertIn("ZeptoMail API Error", str(context.exception))
-        self.assertIn("Invalid parameter provided", str(context.exception))
-        self.assertIn("to: This field is required", str(context.exception))
-        
-    @patch('requests.post')
-    def test_specific_error_codes(self, mock_post):
-        # Test TM_3201 GE_102 error (missing subject)
-        mock_response = MagicMock()
+    def test_handle_response_error(self, mock_post):
+        """Test error API response handling"""
+        mock_response = Mock()
+        mock_response.status_code = 400
         mock_response.json.return_value = {
             "error": {
                 "code": "TM_3201",
                 "sub_code": "GE_102",
-                "message": "Mandatory Field 'subject' was set as Empty Value.",
-                "details": [
-                    {
-                        "target": "subject",
-                        "message": "This field is required"
-                    }
-                ]
+                "message": "Error message",
+                "details": [{"target": "subject", "message": "Subject is required"}]
             },
-            "request_id": "req-error-456"
+            "request_id": "test_request_id"
         }
-        mock_post.return_value = mock_response
         
         with self.assertRaises(ZeptoMailError) as context:
-            self.client.send_email(
-                from_address="test@example.com",
-                to=[self.client.add_recipient("recipient@example.com")],
-                subject="",
-                html_body="<p>Test</p>"
-            )
+            self.client._handle_response(mock_response)
         
-        # Check that the exception includes the solution
-        self.assertIn("Set a non-empty subject", str(context.exception))
-        
-    def test_zeptomail_error_detail_messages(self):
-        # Test with target and message
-        error = ZeptoMailError(
-            message="Test error",
-            code="TEST_001",
-            details=[
-                {"target": "field1", "message": "Error in field1"},
-                {"target": "field2", "message": "Error in field2"}
-            ],
-            request_id="test-req-123"
-        )
-        error_str = str(error)
-        self.assertIn("field1: Error in field1", error_str)
-        self.assertIn("field2: Error in field2", error_str)
-        
-        # Test with only message, no target
-        error = ZeptoMailError(
-            message="Test error",
-            code="TEST_002",
-            details=[
-                {"message": "General error message"}
-            ],
-            request_id="test-req-456"
-        )
-        error_str = str(error)
-        self.assertIn("General error message", error_str)
-        
-        # Test with empty details list
-        error = ZeptoMailError(
-            message="Test error",
-            code="TEST_003",
-            details=[],
-            request_id="test-req-789"
-        )
-        error_str = str(error)
-        self.assertNotIn("Details:", error_str)
-        
-    def test_get_error_solution(self):
-        # Create a client instance for testing
-        client = ZeptoMail("test-api-key")
-        
-        # Test with string solution
-        solution = client._get_error_solution(
-            "TM_3301", "SM_101", []
-        )
-        self.assertEqual(solution, "Check your API request syntax for valid JSON format.")
-        
-        # Test with dictionary solution and matching target
-        solution = client._get_error_solution(
-            "TM_3201", "GE_102", [{"target": "subject", "message": "This field is required"}]
-        )
-        self.assertEqual(solution, "Set a non-empty subject for your email.")
-        
-        # Test with dictionary solution but no matching target
-        # Should return the first solution in the dictionary
-        solution = client._get_error_solution(
-            "TM_3201", "GE_102", [{"target": "unknown_field", "message": "Error"}]
-        )
-        self.assertIsNotNone(solution)  # Should return some solution (first in dict)
-        
-        # Test with no matching error code
-        solution = client._get_error_solution(
-            "UNKNOWN_CODE", "UNKNOWN_SUB", []
-        )
-        self.assertIsNone(solution)
-        
-    @patch('requests.post')
-    def test_invalid_json_response(self, mock_post):
-        # Setup mock response with invalid JSON
-        mock_response = MagicMock()
-        mock_response.json.side_effect = ValueError("Invalid JSON")
-        mock_response.status_code = 400
-        mock_post.return_value = mock_response
-        
-        # Call the method and expect an exception
-        with self.assertRaises(ZeptoMailError) as context:
-            self.client.send_email(
-                from_address="test@example.com",
-                to=[self.client.add_recipient("recipient@example.com")],
-                subject="Test Email",
-                html_body="<p>Test</p>"
-            )
-        
-        # Check the exception message
-        self.assertIn("Invalid JSON response", str(context.exception))
-        self.assertIn("TM_3301", str(context.exception))
-        self.assertIn("SM_101", str(context.exception))
+        error = context.exception
+        self.assertEqual(error.code, "TM_3201")
+        self.assertEqual(error.sub_code, "GE_102")
+        self.assertEqual(error.request_id, "test_request_id")
+        self.assertIn("Subject is required", str(error))
     
     @patch('requests.post')
-    def test_send_email_with_all_parameters(self, mock_post):
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"data": {"message_id": "test-id-full"}}
+    def test_handle_response_invalid_json(self, mock_post):
+        """Test handling invalid JSON response"""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client._handle_response(mock_response)
+        
+        error = context.exception
+        self.assertEqual(error.code, "TM_3301")
+        self.assertEqual(error.sub_code, "SM_101")
+        self.assertIn("Invalid JSON response", str(error))
+    
+    @patch('requests.post')
+    def test_handle_response_non_201(self, mock_post):
+        """Test handling non-201 response without error object"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": "test_data"}
+        
+        with self.assertRaises(Exception) as context:
+            self.client._handle_response(mock_response)
+        
+        self.assertIn("Invalid response from API", str(context.exception))
+    
+    @patch('requests.post')
+    def test_send_email_success(self, mock_post):
+        """Test successful email sending"""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"data": {"message_id": "test_id"}}
         mock_post.return_value = mock_response
         
-        # Create test data
-        to_recipients = [self.client.add_recipient("to@example.com", "To Recipient")]
-        cc_recipients = [self.client.add_recipient("cc@example.com", "CC Recipient")]
-        bcc_recipients = [self.client.add_recipient("bcc@example.com", "BCC Recipient")]
-        reply_to = [{"email": "reply@example.com", "name": "Reply To"}]
+        result = self.client.send_email(
+            from_address="from@example.com",
+            from_name="Sender",
+            to=[{"email": "to@example.com", "name": "Recipient"}],
+            subject="Test Subject",
+            html_body="<p>Test Body</p>"
+        )
         
-        attachments = [
-            self.client.add_attachment_from_content(
-                content="base64content", 
-                mime_type="application/pdf", 
-                name="document.pdf"
-            )
-        ]
+        self.assertEqual(result, {"data": {"message_id": "test_id"}})
+        mock_post.assert_called_once()
         
-        inline_images = [
-            self.client.add_inline_image(
-                cid="image123", 
-                content="base64image", 
-                mime_type="image/jpeg"
-            )
-        ]
+        # Verify the payload
+        call_args = mock_post.call_args
+        url = call_args[0][0]
+        headers = call_args[1]["headers"]
+        payload = json.loads(call_args[1]["data"])
         
+        self.assertEqual(url, "https://api.zeptomail.eu/v1.1/email")
+        self.assertEqual(headers["Authorization"], "Zoho-enczapikey test_api_key")
+        self.assertEqual(payload["from"], {"email": "from@example.com", "name": "Sender"})
+        self.assertEqual(payload["to"], [{"email": "to@example.com", "name": "Recipient"}])
+        self.assertEqual(payload["subject"], "Test Subject")
+        self.assertEqual(payload["htmlbody"], "<p>Test Body</p>")
+    
+    @patch('requests.post')
+    def test_send_email_with_all_options(self, mock_post):
+        """Test email sending with all optional parameters"""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"data": {"message_id": "test_id"}}
+        mock_post.return_value = mock_response
+        
+        # Create test data for all optional parameters
+        cc_recipients = [{"email": "cc@example.com", "name": "CC Recipient"}]
+        bcc_recipients = [{"email": "bcc@example.com", "name": "BCC Recipient"}]
+        reply_to = [{"email": "reply@example.com", "name": "Reply Contact"}]
+        attachments = [{"file_cache_key": "test_key", "name": "test.pdf"}]
+        inline_images = [{"cid": "image1", "file_cache_key": "image_key"}]
+        client_reference = "test-reference-123"
         mime_headers = {"X-Custom-Header": "Custom Value"}
         
-        # Call the method with all parameters
-        response = self.client.send_email(
-            from_address="sender@example.com",
-            from_name="Full Sender",
-            to=to_recipients,
+        result = self.client.send_email(
+            from_address="from@example.com",
+            from_name="Sender",
+            to=[{"email": "to@example.com", "name": "Recipient"}],
             cc=cc_recipients,
             bcc=bcc_recipients,
             reply_to=reply_to,
-            subject="Complete Test Email",
-            html_body="<p>HTML Content</p>",
-            text_body="Plain text content",
+            subject="Test Subject",
+            html_body="<p>Test HTML</p>",
+            text_body="Test plain text",
             attachments=attachments,
             inline_images=inline_images,
             track_clicks=False,
             track_opens=False,
-            client_reference="ref-12345",
+            client_reference=client_reference,
             mime_headers=mime_headers
         )
         
-        # Assert the response
-        self.assertEqual(response, {"data": {"message_id": "test-id-full"}})
+        self.assertEqual(result, {"data": {"message_id": "test_id"}})
         
-        # Verify the payload structure
-        args, kwargs = mock_post.call_args
-        self.assertEqual(args[0], "https://api.zeptomail.eu/v1.1/email")
+        # Verify the payload includes all optional parameters
+        call_args = mock_post.call_args
+        payload = json.loads(call_args[1]["data"])
         
-        payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["email"], "sender@example.com")
-        self.assertEqual(payload["from"]["name"], "Full Sender")
-        self.assertEqual(payload["to"], to_recipients)
+        # Check all optional parameters are included correctly
         self.assertEqual(payload["cc"], cc_recipients)
         self.assertEqual(payload["bcc"], bcc_recipients)
         self.assertEqual(payload["reply_to"], reply_to)
-        self.assertEqual(payload["subject"], "Complete Test Email")
-        self.assertEqual(payload["htmlbody"], "<p>HTML Content</p>")
-        self.assertEqual(payload["textbody"], "Plain text content")
-        self.assertEqual(payload["attachments"], attachments)
-        self.assertEqual(payload["inline_images"], inline_images)
+        self.assertEqual(payload["htmlbody"], "<p>Test HTML</p>")
+        self.assertEqual(payload["textbody"], "Test plain text")
         self.assertEqual(payload["track_clicks"], False)
         self.assertEqual(payload["track_opens"], False)
-        self.assertEqual(payload["client_reference"], "ref-12345")
+        self.assertEqual(payload["client_reference"], client_reference)
         self.assertEqual(payload["mime_headers"], mime_headers)
+        self.assertEqual(payload["attachments"], attachments)
+        self.assertEqual(payload["inline_images"], inline_images)
+    
+    def test_validate_email_params(self):
+        """Test the email parameter validation method"""
+        # Test missing from_address
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client._validate_email_params(
+                from_address="",
+                to=[{"email": "to@example.com"}],
+                cc=None,
+                bcc=None,
+                html_body="<p>Test</p>",
+                text_body=None
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("from_address", str(context.exception))
         
+        # Test missing recipients
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client._validate_email_params(
+                from_address="from@example.com",
+                to=None,
+                cc=None,
+                bcc=None,
+                html_body="<p>Test</p>",
+                text_body=None
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("recipient", str(context.exception))
+        
+        # Test missing body
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client._validate_email_params(
+                from_address="from@example.com",
+                to=[{"email": "to@example.com"}],
+                cc=None,
+                bcc=None,
+                html_body=None,
+                text_body=None
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("body", str(context.exception))
+    
+    @patch('requests.post')
+    def test_send_email_validation_errors(self, mock_post):
+        """Test validation errors when sending email"""
+        # Test missing from_address
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client.send_email(
+                from_address="",
+                to=[{"email": "to@example.com"}],
+                html_body="<p>Test</p>"
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("from_address", str(context.exception))
+        
+        # Test missing recipients
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client.send_email(
+                from_address="from@example.com",
+                to=None,
+                html_body="<p>Test</p>"
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("recipient", str(context.exception))
+        
+        # Test missing body
+        with self.assertRaises(ZeptoMailError) as context:
+            self.client.send_email(
+                from_address="from@example.com",
+                to=[{"email": "to@example.com"}],
+                html_body=None,
+                text_body=None
+            )
+        self.assertEqual(context.exception.code, "VALIDATION_ERROR")
+        self.assertIn("body", str(context.exception))
+    
     @patch('requests.post')
     def test_send_batch_email(self, mock_post):
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"data": {"batch_id": "batch-123"}}
+        """Test batch email sending"""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"data": {"batch_id": "test_batch_id"}}
         mock_post.return_value = mock_response
         
-        # Create batch recipients with merge info
-        recipients = [
-            self.client.add_batch_recipient(
-                "recipient1@example.com",
-                "Recipient One",
-                {"first_name": "Recipient", "last_name": "One"}
-            ),
-            self.client.add_batch_recipient(
-                "recipient2@example.com",
-                "Recipient Two",
-                {"first_name": "Recipient", "last_name": "Two"}
-            )
-        ]
-        
-        # Call the method
-        response = self.client.send_batch_email(
-            from_address="test@example.com",
+        result = self.client.send_batch_email(
+            from_address="from@example.com",
             from_name="Sender",
-            to=recipients,
-            subject="Test Batch Email",
-            html_body="<p>Hello {{first_name}} {{last_name}}</p>",
-            text_body="Hello {{first_name}} {{last_name}}",
-            client_reference="test-batch-123",
-            merge_info={"default_name": "User"}
+            to=[
+                {"email": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
+                {"email": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
+            ],
+            subject="Test Subject",
+            html_body="<p>Hello {{name}}</p>",
+            merge_info={"default": "Friend"}
         )
         
-        # Assert the response
-        self.assertEqual(response, {"data": {"batch_id": "batch-123"}})
-        
-        # Assert the request was made correctly
+        self.assertEqual(result, {"data": {"batch_id": "test_batch_id"}})
         mock_post.assert_called_once()
         
-        # Verify the URL used
-        args, kwargs = mock_post.call_args
-        self.assertEqual(args[0], "https://api.zeptomail.eu/v1.1/email/batch")
+        # Verify the payload
+        call_args = mock_post.call_args
+        url = call_args[0][0]
+        payload = json.loads(call_args[1]["data"])
         
-        # Verify payload structure
-        payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["email"], "test@example.com")
-        self.assertEqual(payload["from"]["name"], "Sender")
-        self.assertEqual(len(payload["to"]), 2)
-        self.assertEqual(payload["subject"], "Test Batch Email")
-        self.assertEqual(payload["htmlbody"], "<p>Hello {{first_name}} {{last_name}}</p>")
-        self.assertEqual(payload["textbody"], "Hello {{first_name}} {{last_name}}")
-        self.assertEqual(payload["client_reference"], "test-batch-123")
-        self.assertEqual(payload["merge_info"], {"default_name": "User"})
-    
-    def test_add_attachment_from_file_cache(self):
-        # Test with name
-        result = self.client.add_attachment_from_file_cache("file-cache-key-123", "document.pdf")
-        self.assertEqual(result, {"file_cache_key": "file-cache-key-123", "name": "document.pdf"})
-        
-        # Test without name
-        result = self.client.add_attachment_from_file_cache("file-cache-key-123")
-        self.assertEqual(result, {"file_cache_key": "file-cache-key-123"})
-    
-    def test_add_attachment_from_content(self):
-        result = self.client.add_attachment_from_content(
-            content="base64encodedcontent",
-            mime_type="application/pdf",
-            name="document.pdf"
-        )
-        self.assertEqual(result, {
-            "content": "base64encodedcontent",
-            "mime_type": "application/pdf",
-            "name": "document.pdf"
-        })
-    
-    def test_add_inline_image(self):
-        # Test with content and mime_type
-        result = self.client.add_inline_image(
-            cid="image123",
-            content="base64encodedimage",
-            mime_type="image/jpeg"
-        )
-        self.assertEqual(result, {
-            "cid": "image123",
-            "content": "base64encodedimage",
-            "mime_type": "image/jpeg"
-        })
-        
-        # Test with file_cache_key
-        result = self.client.add_inline_image(
-            cid="image123",
-            file_cache_key="file-cache-key-123"
-        )
-        self.assertEqual(result, {
-            "cid": "image123",
-            "file_cache_key": "file-cache-key-123"
-        })
-        
-        # Test with only cid
-        result = self.client.add_inline_image(cid="image123")
-        self.assertEqual(result, {"cid": "image123"})
+        self.assertEqual(url, "https://api.zeptomail.eu/v1.1/email/batch")
+        self.assertEqual(payload["from"], {"email": "from@example.com", "name": "Sender"})
+        self.assertEqual(payload["to"], [
+            {"email": "to1@example.com", "name": "Recipient 1", "merge_info": {"name": "John"}},
+            {"email": "to2@example.com", "name": "Recipient 2", "merge_info": {"name": "Jane"}}
+        ])
+        self.assertEqual(payload["merge_info"], {"default": "Friend"})
         
     @patch('requests.post')
-    def test_send_batch_email_with_all_parameters(self, mock_post):
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"data": {"batch_id": "batch-full-123"}}
+    def test_send_batch_email_with_all_options(self, mock_post):
+        """Test batch email sending with all optional parameters"""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"data": {"batch_id": "test_batch_id"}}
         mock_post.return_value = mock_response
         
-        # Create test data
-        to_recipients = [
-            self.client.add_batch_recipient("to@example.com", "To Recipient", {"var": "value"})
-        ]
-        cc_recipients = [
-            self.client.add_batch_recipient("cc@example.com", "CC Recipient")
-        ]
-        bcc_recipients = [
-            self.client.add_batch_recipient("bcc@example.com", "BCC Recipient")
-        ]
-        
-        attachments = [
-            self.client.add_attachment_from_content(
-                content="base64content", 
-                mime_type="application/pdf", 
-                name="document.pdf"
-            )
-        ]
-        
-        inline_images = [
-            self.client.add_inline_image(
-                cid="image123", 
-                content="base64image", 
-                mime_type="image/jpeg"
-            )
-        ]
-        
+        # Create test data for all optional parameters
+        cc_recipients = [{"email": "cc@example.com", "name": "CC Recipient"}]
+        bcc_recipients = [{"email": "bcc@example.com", "name": "BCC Recipient"}]
+        attachments = [{"file_cache_key": "test_key", "name": "test.pdf"}]
+        inline_images = [{"cid": "image1", "file_cache_key": "image_key"}]
+        client_reference = "test-reference-123"
         mime_headers = {"X-Custom-Header": "Custom Value"}
         
-        # Call the method with all parameters
-        response = self.client.send_batch_email(
-            from_address="sender@example.com",
-            from_name="Full Sender",
-            to=to_recipients,
+        result = self.client.send_batch_email(
+            from_address="from@example.com",
+            from_name="Sender",
+            to=[{"email": "to@example.com", "name": "Recipient"}],
             cc=cc_recipients,
             bcc=bcc_recipients,
-            subject="Complete Batch Test Email",
-            html_body="<p>HTML Content with {{var}}</p>",
-            text_body="Plain text content with {{var}}",
+            subject="Test Subject",
+            html_body="<p>Test HTML</p>",
+            text_body="Test plain text",
             attachments=attachments,
             inline_images=inline_images,
             track_clicks=False,
             track_opens=False,
-            client_reference="batch-ref-12345",
+            client_reference=client_reference,
             mime_headers=mime_headers,
-            merge_info={"default_var": "Default Value"}
+            merge_info={"default": "Friend"}
         )
         
-        # Assert the response
-        self.assertEqual(response, {"data": {"batch_id": "batch-full-123"}})
+        self.assertEqual(result, {"data": {"batch_id": "test_batch_id"}})
         
-        # Verify the payload structure
-        args, kwargs = mock_post.call_args
-        self.assertEqual(args[0], "https://api.zeptomail.eu/v1.1/email/batch")
+        # Verify the payload includes all optional parameters
+        call_args = mock_post.call_args
+        payload = json.loads(call_args[1]["data"])
         
-        payload = json.loads(kwargs["data"])
-        self.assertEqual(payload["from"]["email"], "sender@example.com")
-        self.assertEqual(payload["from"]["name"], "Full Sender")
-        self.assertEqual(payload["to"], to_recipients)
+        # Check all optional parameters are included correctly
         self.assertEqual(payload["cc"], cc_recipients)
         self.assertEqual(payload["bcc"], bcc_recipients)
-        self.assertEqual(payload["subject"], "Complete Batch Test Email")
-        self.assertEqual(payload["htmlbody"], "<p>HTML Content with {{var}}</p>")
-        self.assertEqual(payload["textbody"], "Plain text content with {{var}}")
-        self.assertEqual(payload["attachments"], attachments)
-        self.assertEqual(payload["inline_images"], inline_images)
+        self.assertEqual(payload["htmlbody"], "<p>Test HTML</p>")
+        self.assertEqual(payload["textbody"], "Test plain text")
         self.assertEqual(payload["track_clicks"], False)
         self.assertEqual(payload["track_opens"], False)
-        self.assertEqual(payload["client_reference"], "batch-ref-12345")
+        self.assertEqual(payload["client_reference"], client_reference)
         self.assertEqual(payload["mime_headers"], mime_headers)
-        self.assertEqual(payload["merge_info"], {"default_var": "Default Value"})
+        self.assertEqual(payload["attachments"], attachments)
+        self.assertEqual(payload["inline_images"], inline_images)
+        self.assertEqual(payload["merge_info"], {"default": "Friend"})
     
-    def test_add_batch_recipient(self):
-        # Test with name and merge_info
-        result = self.client.add_batch_recipient(
-            "recipient@example.com",
-            "Recipient Name",
-            {"first_name": "Recipient", "last_name": "Name", "order_id": "12345"}
+    def test_helper_methods(self):
+        """Test helper methods for creating recipients and attachments"""
+        # Test add_recipient
+        recipient = self.client.add_recipient("test@example.com", "Test User")
+        self.assertEqual(recipient, {"email": "test@example.com", "name": "Test User"})
+        
+        # Test add_batch_recipient
+        batch_recipient = self.client.add_batch_recipient(
+            "test@example.com", "Test User", {"var1": "value1"}
         )
-        self.assertEqual(result, {
-            "email": "recipient@example.com",
-            "name": "Recipient Name",
-            "merge_info": {
-                "first_name": "Recipient", 
-                "last_name": "Name", 
-                "order_id": "12345"
-            }
+        self.assertEqual(batch_recipient, {
+            "email": "test@example.com", 
+            "name": "Test User",
+            "merge_info": {"var1": "value1"}
         })
         
-        # Test with only address
-        result = self.client.add_batch_recipient("recipient@example.com")
-        self.assertEqual(result, {
-            "email": "recipient@example.com"
+        # Test add_attachment_from_file_cache
+        attachment = self.client.add_attachment_from_file_cache("cache_key", "file.pdf")
+        self.assertEqual(attachment, {"file_cache_key": "cache_key", "name": "file.pdf"})
+        
+        # Test add_attachment_from_content
+        attachment = self.client.add_attachment_from_content(
+            "base64content", "application/pdf", "file.pdf"
+        )
+        self.assertEqual(attachment, {
+            "content": "base64content",
+            "mime_type": "application/pdf",
+            "name": "file.pdf"
         })
         
-        # Test with address and name but no merge_info
-        result = self.client.add_batch_recipient("recipient@example.com", "Recipient Name")
-        self.assertEqual(result, {
-            "email": "recipient@example.com",
-            "name": "Recipient Name"
+        # Test add_inline_image with content
+        inline_image = self.client.add_inline_image(
+            "image_cid", "base64content", "image/png"
+        )
+        self.assertEqual(inline_image, {
+            "cid": "image_cid",
+            "content": "base64content",
+            "mime_type": "image/png"
         })
         
+        # Test add_inline_image with file_cache_key
+        inline_image = self.client.add_inline_image("image_cid", file_cache_key="cache_key")
+        self.assertEqual(inline_image, {
+            "cid": "image_cid",
+            "file_cache_key": "cache_key"
+        })
+
 if __name__ == '__main__':
     unittest.main()

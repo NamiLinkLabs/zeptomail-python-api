@@ -1,7 +1,6 @@
 from .client import ZeptoMail
 from .webhooks import webhook_router, WebhookEvent, BounceEvent, OpenEvent, ClickEvent
-
-__version__ = "0.1.1"
+from .errors import  ZeptoMailError
 __all__ = [
     "ZeptoMail",
     "webhook_router",

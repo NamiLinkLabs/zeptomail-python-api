@@ -29,7 +29,8 @@ class ZeptoMail:
             "Authorization": api_key
         }
 
-    def _build_recipient(self, email: str, name: Optional[str] = None) -> Dict:
+
+    def build_email_dict(self, email: str, name: Optional[str] = None) -> Dict:
         """
         Build a recipient object.
 
@@ -43,45 +44,13 @@ class ZeptoMail:
         Raises:
             ZeptoMailError: If the email address is invalid
         """
-
             
-        email_address = {"address": email}
+        email_dict = {"address": email}
         if name:
-            email_address["name"] = name
+            email_dict["name"] = name
             
-        return email_address
+        return email_dict
     
-    def build_sender(self, email: str, name: Optional[str] = None) -> Dict:
-        """
-        Build a sender object.
-
-        Args:
-            email: Email address of the sender
-            name: Name of the sender
-
-        Returns:
-            Dict containing sender details with format {"address": email, "name": name}
-            
-        Raises:
-            ZeptoMailError: If the email address is invalid
-        """
-        if not email:
-            raise ZeptoMailError(
-                "Email address cannot be empty",
-                code="VALIDATION_ERROR"
-            )
-            
-        if not self._validate_email(email):
-            raise ZeptoMailError(
-                f"Invalid email address format: {email}",
-                code="VALIDATION_ERROR"
-            )
-            
-        sender = {"address": email}
-        if name:
-            sender["name"] = name
-            
-        return sender
 
     def _build_recipient_with_merge_info(self, email: str, name: Optional[str] = None,
                                          merge_info: Optional[Dict] = None) -> Dict:
@@ -99,11 +68,12 @@ class ZeptoMail:
         Raises:
             ZeptoMailError: If the email address is invalid
         """
-        recipient = {"email_address": self._build_recipient(email, name)}
+        recipient = {"email_address": self.build_email_dict(email, name)}
         if merge_info:
             recipient["merge_info"] = merge_info
         return recipient
 
+        
     def _handle_response(self, response: requests.Response) -> Dict:
         """
         Handle the API response and check for errors.
@@ -175,24 +145,42 @@ class ZeptoMail:
         else:
             return obj
             
-    def _validate_email(self, email: str) -> bool:
+    def _validate_email_params(self, from_address: str, to: List[Dict], cc: List[Dict], 
+                              bcc: List[Dict], html_body: Optional[str], text_body: Optional[str]) -> None:
         """
-        Validate an email address format.
+        Validate required email parameters.
         
         Args:
-            email: Email address to validate
+            from_address: Sender's email address
+            to: List of to recipients
+            cc: List of cc recipients
+            bcc: List of bcc recipients
+            html_body: HTML content of the email
+            text_body: Plain text content of the email
             
-        Returns:
-            True if the email format is valid, False otherwise
+        Raises:
+            ZeptoMailError: If any required fields are missing
         """
-        import re
-        # Basic email validation pattern
-        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        return bool(re.match(pattern, email))
+        if not from_address:
+            raise ZeptoMailError(
+                "Missing required field: 'from_address' cannot be empty",
+                code="VALIDATION_ERROR"
+            )
             
+        if not (to or cc or bcc):
+            raise ZeptoMailError(
+                "Missing required field: at least one recipient (to, cc, or bcc) is required",
+                code="VALIDATION_ERROR"
+            )
+            
+        if not (html_body or text_body):
+            raise ZeptoMailError(
+                "Missing required field: either 'html_body' or 'text_body' must be provided",
+                code="VALIDATION_ERROR"
+            )
     
     def send_email(self,
-                   from_email: str,
+                   from_address: str,
                    from_name: Optional[str] = None,
                    to: List[Dict] = None,
                    cc: List[Dict] = None,
@@ -234,28 +222,12 @@ class ZeptoMail:
             ZeptoMailError: If required fields are missing or API returns an error
         """
         # Validate required fields
-        if not from_email:
-            raise ZeptoMailError(
-                "Missing required field: 'from_email' cannot be empty",
-                code="VALIDATION_ERROR"
-            )
-            
-        if not (to or cc or bcc):
-            raise ZeptoMailError(
-                "Missing required field: at least one recipient (to, cc, or bcc) is required",
-                code="VALIDATION_ERROR"
-            )
-            
-        if not (html_body or text_body):
-            raise ZeptoMailError(
-                "Missing required field: either 'html_body' or 'text_body' must be provided",
-                code="VALIDATION_ERROR"
-            )
-            
+        self._validate_email_params(from_address, to, cc, bcc, html_body, text_body)
+        
         url = f"{self.base_url}/email"
 
         payload = {
-            "from": self.build_sender(from_email, from_name),
+            "from": self.build_email_dict(from_address, from_name),
             "subject": subject
         }
 
@@ -302,7 +274,7 @@ class ZeptoMail:
         return self._handle_response(response)
 
     def send_batch_email(self,
-                         from_email: str,
+                         from_address: str,
                          from_name: Optional[str] = None,
                          to: List[Dict] = None,
                          cc: List[Dict] = None,
@@ -344,28 +316,12 @@ class ZeptoMail:
             ZeptoMailError: If required fields are missing or API returns an error
         """
         # Validate required fields
-        if not from_email:
-            raise ZeptoMailError(
-                "Missing required field: 'from_email' cannot be empty",
-                code="VALIDATION_ERROR"
-            )
-            
-        if not (to or cc or bcc):
-            raise ZeptoMailError(
-                "Missing required field: at least one recipient (to, cc, or bcc) is required",
-                code="VALIDATION_ERROR"
-            )
-            
-        if not (html_body or text_body):
-            raise ZeptoMailError(
-                "Missing required field: either 'html_body' or 'text_body' must be provided",
-                code="VALIDATION_ERROR"
-            )
-            
+        self._validate_email_params(from_address, to, cc, bcc, html_body, text_body)
+        
         url = f"{self.base_url}/email/batch"
 
         payload = {
-            "from": self.build_sender(from_email, from_name),
+            "from": self.build_email_dict(from_address, from_name),
             "subject": subject
         }
 
@@ -422,9 +378,9 @@ class ZeptoMail:
             name: Recipient name
 
         Returns:
-            Recipient dictionary with format {"email_address": {"address": email, "name": name}}
+            Recipient dictionary with format {"email_address": {"email": email, "name": name}}
         """
-        return {"email_address": self._build_recipient(email, name)}
+        return {"email_address": self.build_email_dict(email, name)}
 
     def add_batch_recipient(self, email: str, name: Optional[str] = None,
                             merge_info: Optional[Dict] = None) -> Dict:
@@ -437,9 +393,11 @@ class ZeptoMail:
             merge_info: Merge fields for this recipient
 
         Returns:
-            Recipient dictionary with format {"email_address": {"address": email, "name": name}, "merge_info": {...}}
+            Recipient dictionary with format {"email": email, "name": name, "merge_info": {...}}
         """
-        recipient = {"email_address": self._build_recipient(email, name)}
+        recipient = {"email": email}
+        if name:
+            recipient["name"] = name
         if merge_info:
             recipient["merge_info"] = merge_info
         return recipient

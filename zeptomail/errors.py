@@ -113,4 +113,4 @@ class ZeptoMailError(Exception):
                     # If no specific target match, return the first solution
                     return next(iter(sub_code_solution.values()), None)
         
-        return "Unknown error happened"
+        return None
