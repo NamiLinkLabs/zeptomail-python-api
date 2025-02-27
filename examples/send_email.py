@@ -12,7 +12,7 @@ def main():
     
     # Send a simple email
     response = client.send_email(
-        from_address="sender@example.com",
+        from_email="sender@example.com",
         from_name="Sender Name",
         to=[recipient],
         subject="Test Email from ZeptoMail Python API",
