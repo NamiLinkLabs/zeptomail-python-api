@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.32.3",
+        "fastapi>=0.115.8",
+    "pydantic>=2.10.6",
+    "uvicorn>=0.34.0",
 ]
 
 [project.urls]
@@ -33,12 +36,6 @@ dependencies = [
 "Bug Tracker" = "https://github.com/NamiLinkLabs/zeptomail-python-api/issues"
 "Documentation" = "https://github.com/NamiLinkLabs/zeptomail-python-api#readme"
 
-[project.optional-dependencies]
-webooks = [
-    "fastapi>=0.115.8",
-    "pydantic>=2.10.6",
-    "uvicorn>=0.34.0",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["zeptomail"]
