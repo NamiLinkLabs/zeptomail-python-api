@@ -11,14 +11,28 @@ A Python client for interacting with the ZeptoMail API.
 
 ## ⚡ Installation
 
+### Core Client Only
+For just the email client functionality (no webhook support):
+
 ```bash
 pip install zeptomail-python-api
+```
+
+### With Webhook Support
+For full functionality including webhook handling:
+
+```bash
+pip install zeptomail-python-api[webhooks]
 ```
 
 Or with uv:
 
 ```bash
+# Core client only
 uv pip install zeptomail-python-api
+
+# With webhook support
+uv pip install "zeptomail-python-api[webhooks]"
 ```
 
 ## 🚀 Usage
@@ -47,7 +61,43 @@ response = client.send_email(
 print(f"Response: {response}")
 ```
 
-### Sending Emails with Attachments
+### Using File Cache for Attachments
+
+ZeptoMail's file cache allows you to upload files once and reuse them across multiple emails, improving performance for large files or batch operations.
+
+```python
+# Upload a file to ZeptoMail's file cache
+with open("document.pdf", "rb") as f:
+    file_data = f.read()
+
+upload_response = client.upload_file(
+    file_data=file_data,
+    file_name="document.pdf",
+    content_type="application/pdf"
+)
+
+file_cache_key = upload_response.get('file_cache_key')
+
+# Create attachment using the file cache key
+attachment = client.add_attachment_from_file_cache(
+    file_cache_key=file_cache_key,
+    name="document.pdf"
+)
+
+# Send email with cached attachment
+response = client.send_email(
+    from_address="sender@example.com",
+    from_name="Sender Name",
+    to=[recipient],
+    subject="Email with Cached Attachment",
+    html_body="<p>Please find the attached document.</p>",
+    attachments=[attachment]
+)
+```
+
+### Traditional Attachments (Base64)
+
+You can also send attachments using base64-encoded content:
 
 ```python
 import base64
@@ -62,20 +112,14 @@ attachment = client.add_attachment_from_content(
     name="document.pdf"
 )
 
-# Or add an attachment from a ZeptoMail file cache key
-cached_attachment = client.add_attachment_from_file_cache(
-    file_cache_key="your-file-cache-key",
-    name="cached-document.pdf"
-)
-
-# Send email with attachments
+# Send email with attachment
 response = client.send_email(
     from_address="sender@example.com",
     from_name="Sender Name",
     to=[recipient],
-    subject="Email with Attachments",
-    html_body="<p>Please find the attached documents.</p>",
-    attachments=[attachment, cached_attachment]
+    subject="Email with Base64 Attachment",
+    html_body="<p>Please find the attached document.</p>",
+    attachments=[attachment]
 )
 ```
 
@@ -130,29 +174,76 @@ response = client.send_email(
 )
 ```
 
+### Webhook Handling (Optional)
+
+If you installed with webhook support, you can handle ZeptoMail webhook events:
+
+```python
+from zeptomail.webhooks import webhook_router, register_mailagent_key, register_handler
+from zeptomail.webhooks import BounceEvent, OpenEvent, ClickEvent
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# Register your mailagent key for webhook validation
+register_mailagent_key("your-mailagent-key")
+
+# Register event handlers
+@register_handler("hardbounce")
+def handle_bounce(event: BounceEvent):
+    print(f"Email bounced: {event.data.email_info.to}")
+
+@register_handler("email_open")
+def handle_open(event: OpenEvent):
+    print(f"Email opened: {event.data.email_info.to}")
+
+@register_handler("email_link_click")
+def handle_click(event: ClickEvent):
+    print(f"Link clicked: {event.data.click_details.url}")
+
+# Include the webhook router
+app.include_router(webhook_router)
+```
+
 ## ✨ Features
 
 - 📨 Send single emails
 - 📊 Send batch emails with personalization
-- 📎 Add attachments and inline images
+- 📎 File cache for efficient attachment handling
+- 📎 Traditional base64 attachments
 - 🖼️ Support for inline images with CID references
 - 📈 Email tracking (opens and clicks)
 - ⚙️ Customize MIME headers
 - 🔍 Detailed error handling with solutions
+- 🪝 Webhook event handling (optional dependency)
 
 ## 🚧 Implementation Status
 
 This library currently implements:
 - ✅ Email Sending API
 - ✅ Batch Email Sending API
-- ✅ Attachments and Inline Images
+- ✅ File Cache API for efficient attachment handling
+- ✅ Traditional base64 attachments and inline images
 - ✅ Personalization with merge fields
+- ✅ Webhook event handling (optional FastAPI dependency)
+- ✅ Modular architecture with optional dependencies
 
 Not yet implemented:
 - ❌ Templates API
 - ❌ Template Management API
 
 Contributions to implement these additional APIs are welcome!
+
+## 📦 Dependencies
+
+### Core Dependencies
+- `requests` - HTTP client for API calls
+- `python-dotenv` - Environment variable management
+
+### Optional Dependencies (webhooks)
+- `fastapi` - Web framework for webhook handling
+- `pydantic` - Data validation for webhook events
+- `uvicorn` - ASGI server for running webhook endpoints
 
 ## 📝 License
 

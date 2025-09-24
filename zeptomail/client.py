@@ -1,7 +1,8 @@
 import requests
 import json
 import base64
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union, BinaryIO
+import os
 
 from zeptomail.errors import ZeptoMailError
 
@@ -177,6 +178,131 @@ class ZeptoMail:
             raise ZeptoMailError(
                 "Missing required field: either 'html_body' or 'text_body' must be provided",
                 code="VALIDATION_ERROR"
+            )
+
+    def upload_file(self, file_path: Optional[str] = None, file_data: Optional[bytes] = None, 
+                    file_name: Optional[str] = None, content_type: str = "application/octet-stream") -> Dict:
+        """
+        Upload a file to ZeptoMail's file cache for later use as an attachment.
+        
+        Args:
+            file_path: Path to the file to upload (mutually exclusive with file_data)
+            file_data: Binary data of the file to upload (mutually exclusive with file_path)
+            file_name: Name for the file in the cache (required if using file_data)
+            content_type: MIME type of the file (defaults to application/octet-stream)
+            
+        Returns:
+            Dict containing the file_cache_key and response details
+            
+        Raises:
+            ZeptoMailError: If the upload fails or parameters are invalid
+        """
+
+        # Validate input parameters
+        if not file_path and not file_data:
+            raise ZeptoMailError(
+                "Either file_path or file_data must be provided or file should not be empty",
+                code="VALIDATION_ERROR"
+            )
+
+            
+        if file_path and file_data:
+            raise ZeptoMailError(
+                "Only one of file_path or file_data should be provided, not both",
+                code="VALIDATION_ERROR"
+            )
+            
+        if file_data and not file_name:
+            raise ZeptoMailError(
+                "file_name is required when using file_data",
+                code="VALIDATION_ERROR"
+            )
+        
+        # Determine file name and prepare data
+        if file_path:
+            if not os.path.exists(file_path):
+                raise ZeptoMailError(
+                    f"File not found: {file_path}",
+                    code="VALIDATION_ERROR"
+                )
+            
+            name = file_name or os.path.basename(file_path)
+            
+            try:
+                with open(file_path, 'rb') as f:
+                    data = f.read()
+            except IOError as e:
+                raise ZeptoMailError(
+                    f"Error reading file: {str(e)}",
+                    code="VALIDATION_ERROR"
+                )
+        else:
+            name = file_name
+            data = file_data
+
+        # Validate file is not empty (moved outside the if/else to apply to both cases)
+        if not data:
+            raise ZeptoMailError(
+                "File content is empty",
+                code="TM_3301"
+            )
+
+        # Prepare the request
+        url = f"{self.base_url}/files"
+        params = {"name": name}
+        
+        # Create headers for file upload (different from regular API calls)
+        upload_headers = {
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": content_type
+        }
+        
+        try:
+            response = requests.post(url, params=params, headers=upload_headers, data=data)
+            
+            # Handle the response
+            try:
+                response_data = response.json()
+            except ValueError:
+                raise ZeptoMailError(
+                    f"Invalid JSON response from file upload API (Status code: {response.status_code})",
+                    code="TM_3301"
+                )
+            
+            # Check for errors in the response
+            if response.status_code != 201 or "error" in response_data:
+                if "error" in response_data:
+                    error = response_data["error"]
+                    error_message = error.get("message", "Unknown error")
+                    error_code = error.get("code", "unknown")
+                    error_sub_code = error.get("sub_code", None)
+                    error_details = error.get("details", [])
+                    request_id = response_data.get("request_id")
+                    
+                    # Get solution based on error codes
+                    solution = ZeptoMailError.get_error_solution(error_code, error_sub_code, error_details)
+                    if solution:
+                        error_message = f"{error_message}. {solution}"
+                    
+                    raise ZeptoMailError(
+                        message=error_message,
+                        code=error_code,
+                        sub_code=error_sub_code,
+                        details=error_details,
+                        request_id=request_id
+                    )
+                else:
+                    raise ZeptoMailError(
+                        f"File upload failed with status code: {response.status_code}",
+                        code="UPLOAD_ERROR"
+                    )
+            
+            return response_data
+            
+        except requests.RequestException as e:
+            raise ZeptoMailError(
+                f"Network error during file upload: {str(e)}",
+                code="NETWORK_ERROR"
             )
     
     def send_email(self,

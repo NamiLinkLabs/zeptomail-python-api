@@ -63,12 +63,14 @@ class ZeptoMailError(Exception):
             },
             "TM_3301": {
                 "SM_101": "Check your API request syntax for valid JSON format.",
-                "SM_120": "Ensure the attachment MIME type matches the actual file content."
+                "SM_120": "Ensure the attachment MIME type matches the actual file content.",
+                "default": "Chosen file has empty content. Fix the content to proceed."
             },
             "TM_3501": {
                 "UE_106": "Use a valid File Cache Key from your Mail Agent's File Cache tab.",
                 "MTR_101": "Use a valid Template Key from your Mail Agent.",
-                "LE_101": "Your credits have expired. Purchase new credits from the ZeptoMail Subscription page."
+                "LE_101": "Your credits have expired. Purchase new credits from the ZeptoMail Subscription page.",
+                "default": "File added violates the Secure Attachment Policy. Check ZeptoMail's secure attachment guidelines."
             },
             "TM_3601": {
                 "SERR_156": "Add your sending IP to the allowed IPs list in settings.",
@@ -80,14 +82,16 @@ class ZeptoMailError(Exception):
                 "SM_111": "Use a sender email with a domain that is verified in your Mail Agent.",
                 "SM_113": "Provide valid values for all required fields.",
                 "SM_128": "Your account needs to be reviewed. Get your account approved before sending emails.",
-                "SERR_157": "Use a valid Sendmail token from your Mail Agent configuration settings."
+                "SERR_157": "Use a valid Sendmail token from your Mail Agent configuration settings.",
+                "default": "Invalid Send Mail token. Check your API key and ensure it's correctly formatted."
             },
             "TM_5001": {
                 "LE_102": "Your credits are exhausted. Purchase new credits from the ZeptoMail Subscription page."
             },
             "TM_8001": {
                 "SM_127": "Reduce the number of attachments to 60 or fewer.",
-                "SM_129": "Ensure all name fields are under 250 characters, subject is under 500 characters, attachment size is under 15MB, and attachment filenames are under 150 characters."
+                "SM_129": "Ensure all name fields are under 250 characters, subject is under 500 characters, attachment size is under 15MB, and attachment filenames are under 150 characters.",
+                "default": "File size exceeded. Ensure your file is under the maximum allowed size limit."
             }
         }
         
@@ -112,5 +116,9 @@ class ZeptoMailError(Exception):
                     
                     # If no specific target match, return the first solution
                     return next(iter(sub_code_solution.values()), None)
+            
+            # If no sub-code match, try to get a default solution for the main code
+            elif "default" in code_solutions:
+                return code_solutions["default"]
         
         return None
