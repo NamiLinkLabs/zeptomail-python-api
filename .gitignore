@@ -22,6 +22,7 @@ env/
 # Local development settings
 .env
 .env.local
+.aider*
 
 # Testing
 .coverage
