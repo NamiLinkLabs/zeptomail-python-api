@@ -197,12 +197,14 @@ class ZeptoMail:
         Raises:
             ZeptoMailError: If the upload fails or parameters are invalid
         """
+
         # Validate input parameters
         if not file_path and not file_data:
             raise ZeptoMailError(
-                "Either file_path or file_data must be provided",
+                "Either file_path or file_data must be provided or file should not be empty",
                 code="VALIDATION_ERROR"
             )
+
             
         if file_path and file_data:
             raise ZeptoMailError(
@@ -237,14 +239,14 @@ class ZeptoMail:
         else:
             name = file_name
             data = file_data
-        
-        # Validate file is not empty
+
+        # Validate file is not empty (moved outside the if/else to apply to both cases)
         if not data:
             raise ZeptoMailError(
                 "File content is empty",
                 code="TM_3301"
             )
-        
+
         # Prepare the request
         url = f"{self.base_url}/files"
         params = {"name": name}
