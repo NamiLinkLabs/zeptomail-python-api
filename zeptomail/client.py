@@ -268,7 +268,7 @@ class ZeptoMail:
                 )
             
             # Check for errors in the response
-            if response.status_code != 200 or "error" in response_data:
+            if response.status_code != 201 or "error" in response_data:
                 if "error" in response_data:
                     error = response_data["error"]
                     error_message = error.get("message", "Unknown error")
